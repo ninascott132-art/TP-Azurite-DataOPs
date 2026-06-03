@@ -1,7 +1,6 @@
 
 name: DataOps CI Pipeline
 
-# Déclencheur : Le pipeline se lance à chaque push sur la branche main
 on:
   push:
     branches: [ main ]
@@ -13,26 +12,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Récupérer le code du dépôt
     - name: Checkout repository code
       uses: actions/checkout@v3
 
-    # 2. Installer la bonne version de Python sur le serveur GitHub
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
 
-    # 3. Installer Flake8 pour la vérification du code (Linter)
-    - name: Install Linting Dependencies
+    - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install flake8
+        pip install flake8 dbt-core dbt-sqlite pandas azure-storage-blob
 
-    # 4. Exécuter l'analyse statique du code
     - name: Run Linters (Flake8)
       run: |
-        # Arrête le pipeline s'il y a des erreurs de syntaxe ou des symboles non définis
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # Affiche de simples avertissements pour le reste du style (sans bloquer)
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    # Initialisation du profil DBT pour le serveur GitHub
+    - name: Setup DBT Profile
+      run: |
+        mkdir -p ~/.dbt
+        echo "dataops_project:" > ~/.dbt/profiles.yml
+        echo "  outputs:" >> ~/.dbt/profiles.yml
+        echo "    dev:" >> ~/.dbt/profiles.yml
+        echo "      type: sqlite" >> ~/.dbt/profiles.yml
+        echo "      threads: 1" >> ~/.dbt/profiles.yml
+        echo "      database: 'database/dataops.db'" >> ~/.dbt/profiles.yml
+        echo "      schema: 'main'" >> ~/.dbt/profiles.yml
+        echo "  target: dev" >> ~/.dbt/profiles.yml
+
+    # Exécution des transformations et des tests de qualité sur GitHub
+    - name: Run DBT Models
+      run: dbt run --project-dir dataops_dbt --profiles-dir ~/.dbt
+
+    - name: Run DBT Tests
+      run: dbt test --project-dir dataops_dbt --profiles-dir ~/.dbt
